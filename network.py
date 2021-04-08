@@ -55,33 +55,27 @@ class ResNetFc(nn.Module):
         if self.use_bottleneck:
             self.bottleneck = nn.Linear(model_resnet.fc.in_features, bottleneck_dim)
             self.fc = nn.Linear(bottleneck_dim, class_num)
-            self.gvbg = nn.Linear(bottleneck_dim, class_num)
             self.focal1 = nn.Linear( class_num,class_num)
             self.focal2 = nn.Linear( class_num,1)
             self.bottleneck.apply(init_weights)
             self.fc.apply(init_weights)
-            self.gvbg.apply(init_weights)
             self.__in_features = bottleneck_dim
         else:
             self.fc = nn.Linear(model_resnet.fc.in_features, class_num)
             self.fc.apply(init_weights)
-            self.gvbg = nn.Linear(model_resnet.fc.in_features, class_num)
-            self.gvbg.apply(init_weights)
+
             self.__in_features = model_resnet.fc.in_features
     else:
         self.fc = model_resnet.fc
         self.__in_features = model_resnet.fc.in_features
 
-  def forward(self, x, gvbg=True):
+  def forward(self, x):
     x = self.feature_layers(x)
     x = x.view(x.size(0), -1)
     if self.use_bottleneck and self.new_cls:
         x = self.bottleneck(x)
-    bridge = self.gvbg(x)
     y = self.fc(x)
-    if gvbg:
-        y = y - bridge
-    return x, y, bridge
+    return x, y
 
   def output_num(self):
     return self.__in_features
@@ -94,8 +88,7 @@ class ResNetFc(nn.Module):
                             {"params":self.fc.parameters(), "lr_mult":10, 'decay_mult':2}]
         else:
             parameter_list = [{"params":self.feature_layers.parameters(), "lr_mult":1, 'decay_mult':2}, \
-                            {"params":self.fc.parameters(), "lr_mult":10, 'decay_mult':2},
-                            {"params":self.gvbg.parameters(), "lr_mult":10, 'decay_mult':2}]
+                            {"params":self.fc.parameters(), "lr_mult":10, 'decay_mult':2}]
     else:
         parameter_list = [{"params":self.parameters(), "lr_mult":1, 'decay_mult':2}]
     return parameter_list
@@ -107,7 +100,6 @@ class AdversarialNetwork(nn.Module):
     self.ad_layer1 = nn.Linear(in_feature, hidden_size)
     self.ad_layer2 = nn.Linear(hidden_size, hidden_size)
     self.ad_layer3 = nn.Linear(hidden_size, 1)
-    self.gvbd = nn.Linear(hidden_size, 1)
     self.relu1 = nn.ReLU()
     self.relu2 = nn.ReLU()
     self.dropout1 = nn.Dropout(0.5)
@@ -130,8 +122,7 @@ class AdversarialNetwork(nn.Module):
     x = self.relu2(x)
     x = self.dropout2(x)
     y = self.ad_layer3(x)
-    z = self.gvbd(x)
-    return y,z
+    return y
 
   def output_num(self):
     return 1
