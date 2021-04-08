@@ -1,39 +1,28 @@
-# GVB
-Code release for ["Gradually Vanishing Bridge for Adversarial Domain Adaptation"](https://arxiv.org/abs/2003.13183) (CVPR 2020)
+# GVB implemneted in PyTorch
 
-## Dataset
-
-Office-31 dataset can be found [here](https://people.eecs.berkeley.edu/~jhoffman/domainadapt/). 
-
-Office-Home dataset can be found [here](http://hemanthdv.org/OfficeHome-Dataset/).
-
-VisDA 2017 dataset can be found [here](https://github.com/VisionLearningGroup/taskcv-2017-public) in the classification track.
-
-## Requirements
-The code is implemented with Python(3.6) and Pytorch(1.0.0).
-
-To install the required python packages, run
-
-```
-pip install -r requirements.txt
-```
+## Prerequisites
+- pytorch = 1.0.1 
+- torchvision = 0.2.1
+- numpy = 1.17.2
+- pillow = 6.2.0
+- python3.6
+- cuda10
 
 ## Training
-Training instructions for GVB-GD and CDAN-GD are in the `README.md` in [GVB-GD](GVB-GD) and [CDAN-GD](CDAN-GD) respectively.
+The following are the command for each task. The GVBG and GVBD represents the parameter for GVB on the generator and discriminator. if GVBG==0, GVBG is not utilized for the network. The test_interval can be changed, which is the number of iterations between near test. The num_iterations can be changed, which is the total training iteration number.
 
-## Citation
-If you use this code for your research, please consider citing:
+Office-31
 ```
-@inproceedings{cui2020gvb,
-  title={Gradually Vanishing Bridge for Adversarial Domain Adaptation},
-  author={Cui, Shuhao and Wang, Shuhui and Zhuo, Junbao and Su, Chi and Huang, Qingming and Tian Qi},
-  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
-  year={2020}
-}
+python train_image.py --gpu_id 0 --GVBG 1 --GVBD 1 --num_iterations 8004  --dset office --s_dset_path data/office/amazon_list.txt --t_dset_path data/office/dslr_list.txt --test_interval 500 --output_dir gvbgd/adn
 ```
 
-## Contact
-If you have any problem about our code, feel free to contact
-- hassassin1621@gmail.com
+Office-Home
+```
+python train_image.py --gpu_id 0 --GVBG 1 --GVBD 1 --num_iterations 8004  --dset office-home --s_dset_path data/office-home/Art.txt --t_dset_path data/office-home/Clipart.txt --test_interval 500 --output_dir gvbgd/ArCl
+```
 
-or describe your problem in Issues.
+VisDA 2017
+```
+python train_image.py --gpu_id 0 --GVBG 1 --GVBD 1 --num_iterations 15002 --dset visda --s_dset_path data/visda-2017/train_list.txt --t_dset_path data/visda-2017/validation_list.txt --test_interval 1000  --output_dir gvbgd
+```
+The codes are heavily borrowed from [CDAN](https://github.com/thuml/CDAN)
