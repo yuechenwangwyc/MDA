@@ -16,7 +16,7 @@ from distutils.version import LooseVersion
 import copy
 
 MAIN_DIR=os.path.dirname(os.getcwd())
-#--dset office-home --s_dset_path Clipart --t_dset_path Art --gpu_id 6
+#--gpu_id 6  --dset office-home --s_dset_path Clipart --t_dset_path Art
 
 def image_classification_test(loader, model):
     start_test = True
@@ -47,23 +47,35 @@ def train(config):
     dsets = {}
     dset_loaders = {}
     data_config = config["data"]
-    prep_dict["source"] = prep.image_target(**config["prep"]['params'])
+    prep_dict["source1"] = prep.image_target(**config["prep"]['params'])
+    prep_dict["source2"] = prep.image_target(**config["prep"]['params'])
+    prep_dict["source3"] = prep.image_target(**config["prep"]['params'])
     prep_dict["target"] = prep.image_target(**config["prep"]['params'])
     prep_dict["test"] = prep.image_test(**config["prep"]['params'])
 
     ## prepare data
-    train_bs = data_config["source"]["batch_size"]
+    train_bs = data_config["source1"]["batch_size"]
     test_bs = data_config["test"]["batch_size"]
-    dsets["source"] = ImageList(open(data_config["source"]["list_path"]).readlines(), \
-                                transform=prep_dict["source"])
-    dset_loaders["source"] = DataLoader(dsets["source"], batch_size=train_bs, \
-            shuffle=True, num_workers=4, drop_last=True)
-    dsets["target"] = ImageList(open(data_config["target"]["list_path"]).readlines(), \
-                                transform=prep_dict["target"])
-    dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs, \
+    dsets["source1"] = ImageList(open(data_config["source1"]["list_path"]).readlines(),
+                                transform=prep_dict["source1"])
+    dset_loaders["source1"] = DataLoader(dsets["source1"], batch_size=train_bs,
             shuffle=True, num_workers=4, drop_last=True)
 
-    dsets["test"] = ImageList(open(data_config["test"]["list_path"]).readlines(), \
+    dsets["source2"] = ImageList(open(data_config["source2"]["list_path"]).readlines(),
+                                transform=prep_dict["source2"])
+    dset_loaders["source2"] = DataLoader(dsets["source2"], batch_size=train_bs,
+                                        shuffle=True, num_workers=4, drop_last=True)
+
+    dsets["source3"] = ImageList(open(data_config["source3"]["list_path"]).readlines(),
+                                transform=prep_dict["source3"])
+    dset_loaders["source3"] = DataLoader(dsets["source3"], batch_size=train_bs,
+                                        shuffle=True, num_workers=4, drop_last=True)
+    dsets["target"] = ImageList(open(data_config["target"]["list_path"]).readlines(),
+                                transform=prep_dict["target"])
+    dset_loaders["target"] = DataLoader(dsets["target"], batch_size=train_bs,
+            shuffle=True, num_workers=4, drop_last=True)
+
+    dsets["test"] = ImageList(open(data_config["test"]["list_path"]).readlines(),
                             transform=prep_dict["test"])
     dset_loaders["test"] = DataLoader(dsets["test"], batch_size=test_bs, \
                                 shuffle=False, num_workers=4)
@@ -75,11 +87,15 @@ def train(config):
     base_network = base_network.cuda()
 
     ## add additional network for some methods
-    ad_net = network.AdversarialNetwork( class_num, 1024)
-    ad_net = ad_net.cuda()
+    ad_net1 = network.AdversarialNetwork( class_num, 1024)
+    ad_net1 = ad_net1.cuda()
+    ad_net2 = network.AdversarialNetwork(class_num, 1024)
+    ad_net2 = ad_net2.cuda()
+    ad_net3 = network.AdversarialNetwork(class_num, 1024)
+    ad_net3 = ad_net3.cuda()
  
     ## set optimizer
-    parameter_list = base_network.get_parameters() + ad_net.get_parameters()
+    parameter_list = base_network.get_parameters() + ad_net1.get_parameters()+ ad_net2.get_parameters()+ ad_net3.get_parameters()
     optimizer_config = config["optimizer"]
     optimizer = optimizer_config["type"](parameter_list, \
                     **(optimizer_config["optim_params"]))
@@ -92,7 +108,9 @@ def train(config):
     #multi gpu
     gpus = config['gpu'].split(',')
     if len(gpus) > 1:
-        ad_net = nn.DataParallel(ad_net, device_ids=[int(i) for i,k in enumerate(gpus)])
+        ad_net1 = nn.DataParallel(ad_net1, device_ids=[int(i) for i,k in enumerate(gpus)])
+        ad_net2 = nn.DataParallel(ad_net2, device_ids=[int(i) for i, k in enumerate(gpus)])
+        ad_net3 = nn.DataParallel(ad_net3, device_ids=[int(i) for i, k in enumerate(gpus)])
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i,k in enumerate(gpus)])
     
     ## train
@@ -105,18 +123,36 @@ def train(config):
             temp_acc = image_classification_test(dset_loaders, base_network)
             if temp_acc > best_acc:
                 best_acc = temp_acc
+                best_model = copy.deepcopy(base_network)
             log_str = "iter: {:05d}, precision: {:.5f}".format(i, temp_acc)
-            config["out_file"].write(log_str+"\n")
+            config["out_file"].write(log_str + "\n")
             config["out_file"].flush()
             print(log_str)
+        if i%100==0:
+            torch.save(best_model, config["out_model"])
+
 
         ## train one iter
-        s1_loader= iter(dset_loaders["source"])#78
+        s1_loader, s2_loader, s3_loader= iter(dset_loaders["source1"]) , iter(dset_loaders["source2"]),iter(dset_loaders["source3"])   #78
         t_loader = iter(dset_loaders["target"])
 
         base_network.train(True)
-        ad_net.train(True)
-        for i, (inputs_source, labels_source) in enumerate(s1_loader):
+        ad_net1.train(True)
+        ad_net2.train(True)
+        ad_net3.train(True)
+        for i, (inputs_source1, labels_source1) in enumerate(s1_loader):
+            try:
+                inputs_source2, labels_source2 = s2_loader.next()
+            except StopIteration:
+                s2_loader = iter(dset_loaders["source2"])
+                inputs_source2, labels_source2 = s2_loader.next()
+
+            try:
+                inputs_source3, labels_source3 = s3_loader.next()
+            except StopIteration:
+                s3_loader = iter(dset_loaders["source3"])
+                inputs_source3, labels_source3 = s3_loader.next()
+            
             try:
                 inputs_target, _ = t_loader.next()
             except StopIteration:
@@ -127,19 +163,36 @@ def train(config):
             iter_n=iter_n+1
             optimizer.zero_grad()
             #network
-            inputs_source, inputs_target, labels_source = inputs_source.cuda(), inputs_target.cuda(), labels_source.cuda()
-            features_source, outputs_source = base_network(inputs_source)
+            inputs_source1, labels_source1 = inputs_source1.cuda(), labels_source1.cuda()
+            inputs_source2, labels_source2 = inputs_source2.cuda(), labels_source2.cuda()
+            inputs_source3, labels_source3 = inputs_source3.cuda(), labels_source3.cuda()
+            inputs_target=inputs_target.cuda()
+
+            features_source1, outputs_source1 = base_network(inputs_source1)
+            features_source2, outputs_source2 = base_network(inputs_source2)
+            features_source3, outputs_source3 = base_network(inputs_source3)
             features_target, outputs_target = base_network(inputs_target)
-            outputs = torch.cat((outputs_source, outputs_target), dim=0)
-            softmax_out = nn.Softmax(dim=1)(outputs)
+                                                           
+            outputs1 = torch.cat((outputs_source1, outputs_target), dim=0)
+            softmax_out1 = nn.Softmax(dim=1)(outputs1)
+
+            outputs2 = torch.cat((outputs_source2, outputs_target), dim=0)
+            softmax_out2 = nn.Softmax(dim=1)(outputs2)
+
+            outputs3 = torch.cat((outputs_source3, outputs_target), dim=0)
+            softmax_out3 = nn.Softmax(dim=1)(outputs3)
 
             #loss calculation
-            transfer_loss = loss.GVB(softmax_out, ad_net, network.calc_coeff(iter_n))
-            classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
-            total_loss = loss_params["trade_off"] * transfer_loss + classifier_loss
+            transfer_loss1 = loss.GVB(softmax_out1, ad_net1, network.calc_coeff(iter_n))
+            transfer_loss2 = loss.GVB(softmax_out2, ad_net2, network.calc_coeff(iter_n))
+            transfer_loss3 = loss.GVB(softmax_out3, ad_net3, network.calc_coeff(iter_n))
+            classifier_loss1 = nn.CrossEntropyLoss()(outputs_source1, labels_source1)
+            classifier_loss2 = nn.CrossEntropyLoss()(outputs_source2, labels_source2)
+            classifier_loss3 = nn.CrossEntropyLoss()(outputs_source3, labels_source3)
+            total_loss =  classifier_loss1+classifier_loss2+classifier_loss3+loss_params["trade_off"] *( transfer_loss1 +transfer_loss2 +transfer_loss3 )
 
             if i % config["print_num"] == 0:
-                log_str = "iter: {:05d}, transferloss: {:.5f}, classifier_loss: {:.5f}".format(iter_n, transfer_loss, classifier_loss)
+                log_str = "iter: {:05d}, classifier_loss: {:.5f}".format(iter_n, total_loss)
                 config["out_file"].write(log_str+"\n")
                 config["out_file"].flush()
                 #print(log_str)
@@ -147,7 +200,7 @@ def train(config):
             total_loss.backward()
             optimizer.step()
 
-
+    torch.save(best_model, config["out_model"])
 
     return best_acc
 
@@ -159,7 +212,9 @@ if __name__ == "__main__":
     parser.add_argument('--gpu_id', type=str, nargs='?', default='0', help="device id to run")
     parser.add_argument('--net', type=str, default='ResNet50', help="Options: ResNet50")
     parser.add_argument('--dset', type=str, default='office-home', help="The dataset or source dataset used")
-    parser.add_argument('--s_dset_path', type=str, default='data/Art.txt', help="The source dataset path list")
+    parser.add_argument('--s_dset_path1', type=str, default='data/Art.txt', help="The source dataset path list")
+    parser.add_argument('--s_dset_path2', type=str, default='data/Art.txt', help="The source dataset path list")
+    parser.add_argument('--s_dset_path3', type=str, default='data/Art.txt', help="The source dataset path list")
     parser.add_argument('--t_dset_path', type=str, default='data/Clipart.txt', help="The target dataset path list")###
     parser.add_argument('--test_interval', type=int, default=1, help="interval of two continuous test phase")
     parser.add_argument('--print_num', type=int, default=100, help="interval of two print loss")
@@ -185,10 +240,10 @@ if __name__ == "__main__":
     if not osp.exists(config["log_dir"]):
         os.mkdir(config["log_dir"])
 
-    config["out_file"] = open(osp.join(config["log_dir"], args.s_dset_path + "_" +
+    config["out_file"] = open(osp.join(config["log_dir"], args.s_dset_path1 + "_" +args.s_dset_path2 + "_" +args.s_dset_path3 + "_" +
                                        args.t_dset_path + "_" +
                                        osp.abspath(__file__).split('/')[-1].split('.')[0] + '.txt'), "w")
-    config["out_model"] = osp.join(config["output_path"], args.s_dset_path + "_" + args.t_dset_path + "_" +
+    config["out_model"] = osp.join(config["output_path"], args.s_dset_path1 + "_" +  args.s_dset_path2 + "_" +  args.s_dset_path3+ "_" + args.t_dset_path + "_" +
                                    osp.abspath(__file__).split('/')[-1].split('.')[0] + '.pth')
 
 
@@ -205,8 +260,12 @@ if __name__ == "__main__":
                            "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
-    config["data"] = {"source":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.s_dset_path+".txt"), "batch_size":args.batch_size}, \
-                      "target":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.t_dset_path+".txt"), "batch_size":args.batch_size}, \
+    config["data"] = {"source1":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.s_dset_path1+".txt"), "batch_size":args.batch_size},
+                      "source2": {"list_path": osp.join(MAIN_DIR, "dataset", args.dset, args.s_dset_path2 + ".txt"),
+                                  "batch_size": args.batch_size},
+                      "source3": {"list_path": osp.join(MAIN_DIR, "dataset", args.dset, args.s_dset_path3 + ".txt"),
+                                  "batch_size": args.batch_size},
+                      "target":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.t_dset_path+".txt"), "batch_size":args.batch_size},
                       "test":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.t_dset_path+".txt"), "batch_size":args.batch_size}}
 
     if config["dataset"] == "office-home":
