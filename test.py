@@ -69,27 +69,30 @@ def train(config):
     ## set base network
     net_config = config["network"]
     base_network = net_config["name"](**net_config["params"])
-    base_network=torch.load('/data/wyc/MDA/office-home/snapshot/Clipart_Product_Real_World_Art_baseline_n_adv.pth')
+    #base_network=torch.load('/data/wyc/MDA/office-home/snapshot/Clipart_Product_Real_World_Art_baseline_n_adv.pth')
+
     base_network = base_network.cuda()
 
     ## add additional network for some methods
 
  
     ## set optimizer
-    parameter_list = base_network.get_parameters()
-    optimizer_config = config["optimizer"]
-    optimizer = optimizer_config["type"](parameter_list, \
-                    **(optimizer_config["optim_params"]))
-    param_lr = []
-    for param_group in optimizer.param_groups:
-        param_lr.append(param_group["lr"])
-    schedule_param = optimizer_config["lr_param"]
-    lr_scheduler = lr_schedule.schedule_dict[optimizer_config["lr_type"]]
+    # parameter_list = base_network.get_parameters()
+    # optimizer_config = config["optimizer"]
+    # optimizer = optimizer_config["type"](parameter_list, \
+    #                 **(optimizer_config["optim_params"]))
+    # param_lr = []
+    # for param_group in optimizer.param_groups:
+    #     param_lr.append(param_group["lr"])
+    # schedule_param = optimizer_config["lr_param"]
+    # lr_scheduler = lr_schedule.schedule_dict[optimizer_config["lr_type"]]
 
     #multi gpu
     gpus = config['gpu'].split(',')
     if len(gpus) > 1:
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i,k in enumerate(gpus)])
+
+    base_network = torch.load('/data/wyc/Clipart_Product_Real_World_Art_baseline_n_adv.pth')
     
     ## train
     best_acc = 0.0
@@ -104,8 +107,6 @@ def train(config):
     config["out_file"].write(log_str + "\n")
     config["out_file"].flush()
     print(log_str)
-
-
 
 
     return best_acc
