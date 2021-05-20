@@ -12,6 +12,7 @@ import lr_schedule
 from data_list import ImageList
 import random
 from distutils.version import LooseVersion
+import copy
 
 MAIN_DIR=os.path.dirname(os.getcwd())
 #--dset office-home --s_dset_path Clipart --t_dset_path Art --gpu_id 6
@@ -70,27 +71,70 @@ def train(config):
     net_config = config["network"]
     base_network = net_config["name"](**net_config["params"])
     base_network = base_network.cuda()
+
+    ## add additional network for some methods
+
+ 
+    ## set optimizer
+    parameter_list = base_network.get_parameters()
+    optimizer_config = config["optimizer"]
+    optimizer = optimizer_config["type"](parameter_list, \
+                    **(optimizer_config["optim_params"]))
+    param_lr = []
+    for param_group in optimizer.param_groups:
+        param_lr.append(param_group["lr"])
+    schedule_param = optimizer_config["lr_param"]
+    lr_scheduler = lr_schedule.schedule_dict[optimizer_config["lr_type"]]
+
     #multi gpu
     gpus = config['gpu'].split(',')
     if len(gpus) > 1:
         base_network = nn.DataParallel(base_network, device_ids=[int(i) for i,k in enumerate(gpus)])
-
-    base_network = torch.load('/data/wyc/MDA/office-home/snapshot/Clipart_Product_Real_World_Art_baseline_n_adv.pth')
     
     ## train
     best_acc = 0.0
-    base_network.eval()
-    temp_acc = image_classification_test(dset_loaders, base_network)
-    temp_model = nn.Sequential(base_network)
-    if temp_acc > best_acc:
-        best_acc = temp_acc
-    log_str = "iter: {:05d}, precision: {:.5f}".format(0, temp_acc)
-    config["out_file"].write(log_str + "\n")
-    config["out_file"].flush()
-    print(log_str)
+    iter_n=0
+    for itn in range(config["num_iterations"]):
+        #test
+        if itn % config["test_interval"] == config["test_interval"] - 1:
+            base_network.train(False)
+            temp_acc = image_classification_test(dset_loaders, base_network)
+            if temp_acc > best_acc:
+                best_acc = temp_acc
+                best_model = copy.deepcopy(base_network)
+            log_str = "iter: {:05d}, precision: {:.5f}".format(itn, temp_acc)
+            config["out_file"].write(log_str+"\n")
+            config["out_file"].flush()
+            print(log_str)
+        # if itn%100==0:
+        #     torch.save(best_model, config["out_model"])
 
+        ## train one iter
+        s1_loader= iter(dset_loaders["source"])#78
 
+        base_network.train(True)
+        for i, (inputs_source, labels_source) in enumerate(s1_loader):
+            optimizer = lr_scheduler(optimizer, iter_n, **schedule_param)
+            iter_n=iter_n+1
+            optimizer.zero_grad()
+            #network
+            inputs_source, labels_source = inputs_source.cuda(), labels_source.cuda()
+            features_source, outputs_source = base_network(inputs_source)
 
+            #loss calculation
+            classifier_loss = nn.CrossEntropyLoss()(outputs_source, labels_source)
+            total_loss =  classifier_loss
+
+            if i % config["print_num"] == 0:
+                log_str = "iter: {:05d}, classifier_loss: {:.5f}".format(iter_n, classifier_loss)
+                config["out_file"].write(log_str+"\n")
+                config["out_file"].flush()
+                #print(log_str)
+
+            total_loss.backward()
+            optimizer.step()
+
+    #torch.save(best_model, config["out_model"])
 
     return best_acc
 
@@ -148,9 +192,9 @@ if __name__ == "__main__":
                            "lr_param":{"lr":args.lr, "gamma":0.001, "power":0.75} }
 
     config["dataset"] = args.dset
-    config["data"] = {"source":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.s_dset_path+".txt"), "batch_size":args.batch_size}, \
-                      "target":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.t_dset_path+".txt"), "batch_size":args.batch_size}, \
-                      "test":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,args.t_dset_path+".txt"), "batch_size":args.batch_size}}
+    config["data"] = {"source":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,"train_test",args.s_dset_path+"_train.txt"), "batch_size":args.batch_size}, \
+                      "target":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,"train_test",args.t_dset_path+"_test.txt"), "batch_size":args.batch_size}, \
+                      "test":{"list_path":osp.join(MAIN_DIR,"dataset",args.dset,"train_test",args.t_dset_path+"_test.txt"), "batch_size":args.batch_size}}
 
     if config["dataset"] == "office-home":
         seed = 2019

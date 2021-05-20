@@ -128,7 +128,7 @@ def train(config):
             config["out_file"].write(log_str + "\n")
             config["out_file"].flush()
             print(log_str)
-        if i%100==0:
+        if i%50==0:
             torch.save(best_model, config["out_model"])
 
 
@@ -140,7 +140,7 @@ def train(config):
         ad_net1.train(True)
         ad_net2.train(True)
         ad_net3.train(True)
-        for i, (inputs_source1, labels_source1) in enumerate(s1_loader):
+        for i_data, (inputs_source1, labels_source1) in enumerate(s1_loader):
             try:
                 inputs_source2, labels_source2 = s2_loader.next()
             except StopIteration:
@@ -191,10 +191,10 @@ def train(config):
             classifier_loss3 = nn.CrossEntropyLoss()(outputs_source3, labels_source3)
             total_loss =  classifier_loss1+classifier_loss2+classifier_loss3+loss_params["trade_off"] *( transfer_loss1 +transfer_loss2 +transfer_loss3 )
 
-            if i % config["print_num"] == 0:
-                log_str = "iter: {:05d}, classifier_loss: {:.5f}".format(iter_n, total_loss)
-                config["out_file"].write(log_str+"\n")
-                config["out_file"].flush()
+            # if i % config["print_num"] == 0:
+            #     log_str = "iter: {:05d}, classifier_loss: {:.5f}".format(iter_n, total_loss)
+            #     config["out_file"].write(log_str+"\n")
+            #     config["out_file"].flush()
                 #print(log_str)
 
             total_loss.backward()
